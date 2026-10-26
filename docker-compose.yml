@@ -1,0 +1,135 @@
+services:
+  db:
+    image: postgres:15-alpine
+    container_name: crm_db
+    restart: always
+    environment:
+      POSTGRES_DB: crm_db
+      POSTGRES_USER: crm_user
+      POSTGRES_PASSWORD: "Crm@StrongPass#2026!"
+    volumes:
+      - pgdata:/var/lib/postgresql/data
+    networks:
+      - backend_net
+
+  pgadmin:
+    image: dpage/pgadmin4
+    container_name: crm_pgadmin
+    restart: always
+    environment:
+      PGADMIN_DEFAULT_EMAIL: admin@crm.local
+      PGADMIN_DEFAULT_PASSWORD: "Admin@StrongPass#2026!"
+    ports:
+      - "5050:80"
+    depends_on:
+      - db
+    networks:
+      - frontend_net
+      - backend_net
+
+  crm_app:
+    build: ./app
+    container_name: crm_app
+    restart: always
+    environment:
+      DB_HOST: db
+      DB_NAME: crm_db
+      DB_USER: crm_user
+      DB_PASS: "Crm@StrongPass#2026!"
+    depends_on:
+      - db
+    networks:
+      - frontend_net
+      - backend_net
+
+  nginx:
+    image: nginx:alpine
+    container_name: crm_nginx
+    restart: always
+    ports:
+      - "80:80"
+    volumes:
+      - ./nginx/nginx.conf:/etc/nginx/nginx.conf:ro
+    depends_on:
+      - crm_app
+    networks:
+      - frontend_net
+
+  postgres_exporter:
+    image: prometheuscommunity/postgres-exporter
+    container_name: crm_db_exporter
+    restart: always
+    environment:
+      DATA_SOURCE_NAME: "postgresql://crm_user:Crm%40StrongPass%232026%21@db:5432/crm_db?sslmode=disable"
+    depends_on:
+      - db
+    networks:
+      - backend_net
+      - monitor_net
+
+  cadvisor:
+    image: gcr.io/cadvisor/cadvisor:latest
+    container_name: crm_cadvisor
+    restart: always
+    volumes:
+      - /:/rootfs:ro
+      - /var/run:/var/run:ro
+      - /sys:/sys:ro
+      - /var/lib/docker/:/var/lib/docker:ro
+    networks:
+      - monitor_net
+
+  prometheus:
+    image: prom/prometheus:latest
+    container_name: crm_prometheus
+    restart: always
+    volumes:
+      - ./prometheus/prometheus.yml:/etc/prometheus/prometheus.yml:ro
+    ports:
+      - "9090:9090"
+    networks:
+      - frontend_net
+      - monitor_net
+
+  loki:
+    image: grafana/loki:latest
+    container_name: crm_loki
+    restart: always
+    ports:
+      - "3101:3100"
+    command: -config.file=/etc/loki/local-config.yaml
+    networks:
+      - monitor_net
+
+  promtail:
+    image: grafana/promtail:latest
+    container_name: crm_promtail
+    restart: always
+    volumes:
+      - /var/lib/docker/containers:/var/lib/docker/containers:ro
+      - /var/run/docker.sock:/var/run/docker.sock
+      - ./loki/promtail-config.yml:/etc/promtail/config.yml:ro
+    command: -config.file=/etc/promtail/config.yml
+    networks:
+      - monitor_net
+
+  grafana:
+    image: grafana/grafana:latest
+    container_name: crm_grafana
+    restart: always
+    ports:
+      - "3000:3000"
+    environment:
+      - GF_SECURITY_ADMIN_PASSWORD=Admin@StrongPass#2026!
+    networks:
+      - frontend_net
+      - monitor_net
+
+networks:
+  frontend_net:
+  backend_net:
+    internal: true
+  monitor_net:
+
+volumes:
+  pgdata:
